@@ -1,130 +1,139 @@
 import streamlit as st
-import sqlite3
-import hashlib
-
-st.set_page_config(page_title="iSFP SaaS", layout="wide")
-
-# -------------------------
-# DB
-# -------------------------
-conn = sqlite3.connect("saas.db", check_same_thread=False)
-c = conn.cursor()
-
-# Tabellen
-c.execute("""CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    username TEXT,
-    password TEXT
-)""")
-
-c.execute("""CREATE TABLE IF NOT EXISTS customers (
-    id INTEGER PRIMARY KEY,
-    name TEXT,
-    email TEXT
-)""")
-
-c.execute("""CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER,
-    customer_id INTEGER,
-    name TEXT,
-    data TEXT
-)""")
-
-conn.commit()
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+import matplotlib.pyplot as plt
 
 # -------------------------
-# Passwort Hash
+# PDF FUNKTION
 # -------------------------
-def hash_pw(pw):
-    return hashlib.sha256(pw.encode()).hexdigest()
+def create_full_pdf(projektname, baujahr, bauteile_daten, kosten_gesamt, foerder_gesamt):
 
-# -------------------------
-# LOGIN / REGISTER
-# -------------------------
-st.sidebar.title("Login / Registrierung")
+    # Diagramm erzeugen
+    energie_alt = 200
+    energie_neu = 120
 
-mode = st.sidebar.selectbox("Modus", ["Login", "Registrieren"])
+    plt.figure()
+    plt.bar(["Vorher","Nachher"], [energie_alt, energie_neu])
+    plt.savefig("energie.png")
+    plt.close()
 
-username = st.sidebar.text_input("Benutzer")
-password = st.sidebar.text_input("Passwort", type="password")
+    doc = SimpleDocTemplate("isfp_profi_bericht.pdf")
+    styles = getSampleStyleSheet()
+    content = []
 
-if mode == "Registrieren":
-    if st.sidebar.button("Account erstellen"):
-        c.execute("INSERT INTO users (username,password) VALUES (?,?)",
-                  (username, hash_pw(password)))
-        conn.commit()
-        st.sidebar.success("Account erstellt")
+    content.append(Paragraph("Individueller Sanierungsfahrplan (iSFP)", styles["Title"]))
+    content.append(Spacer(1,12))
 
-if mode == "Login":
-    if st.sidebar.button("Login"):
-        c.execute("SELECT * FROM users WHERE username=? AND password=?",
-                  (username, hash_pw(password)))
-        user = c.fetchone()
-        
-        if user:
-            st.session_state["user_id"] = user[0]
-            st.sidebar.success("Eingeloggt")
-        else:
-            st.sidebar.error("Falsche Daten")
+    content.append(Paragraph(f"Projekt: {projektname}", styles["Normal"]))
+    content.append(Paragraph(f"Baujahr: {baujahr}", styles["Normal"]))
 
-# Stop wenn nicht eingeloggt
-if "user_id" not in st.session_state:
-    st.stop()
+    content.append(Spacer(1,12))
 
-# -------------------------
-# DASHBOARD
-# -------------------------
-st.title("📊 Dashboard")
+    content.append(Paragraph("Bauteile:", styles["Heading2"]))
 
-user_id = st.session_state["user_id"]
+    for b in bauteile_daten:
+        content.append(Paragraph(
+            f"{b['name']}: U alt {b['u_alt']} → U neu {b['u_neu']} | Dämmung {b['d']} cm",
+            styles["Normal"]
+        ))
+
+    content.append(Spacer(1,12))
+
+    content.append(Paragraph("Kosten & Förderung:", styles["Heading2"]))
+    content.append(Paragraph(f"Gesamtkosten: {int(kosten_gesamt)} €", styles["Normal"]))
+    content.append(Paragraph(f"Förderung: {int(foerder_gesamt)} €", styles["Normal"]))
+    content.append(Paragraph(f"Eigenanteil: {int(kosten_gesamt - foerder_gesamt)} €", styles["Normal"]))
+
+    doc.build(content)
 
 # -------------------------
-# KUNDEN
+# APP START
 # -------------------------
-st.header("👥 Kunden")
+st.set_page_config(page_title="iSFP Tool", layout="wide")
 
-name = st.text_input("Kundenname")
-email = st.text_input("E-Mail")
-
-if st.button("Kunde speichern"):
-    c.execute("INSERT INTO customers (name,email) VALUES (?,?)", (name,email))
-    conn.commit()
-    st.success("Kunde gespeichert")
-
-c.execute("SELECT * FROM customers")
-kunden = c.fetchall()
-
-for k in kunden:
-    st.write(f"{k[1]} – {k[2]}")
+st.title("🏠 iSFP Beratungs-Tool (Profi)")
 
 # -------------------------
-# PROJEKTE
+# PROJEKT
 # -------------------------
-st.header("🏠 Projekte")
+st.header("Projekt")
 
-proj_name = st.text_input("Projektname")
+projektname = st.text_input("Projektname", "Musterprojekt")
+baujahr = st.number_input("Baujahr", 1900, 2025, 1980)
 
-kunde_namen = [k[1] for k in kunden]
-kunde = st.selectbox("Kunde auswählen", kunde_namen)
+# -------------------------
+# DATEN INITIALISIEREN
+# -------------------------
+bauteile_daten = []
+kosten_gesamt = 0
+foerder_gesamt = 0
 
-kunde_id = [k[0] for k in kunden if k[1] == kunde][0] if kunden else None
+# -------------------------
+# BAUTEILE
+# -------------------------
+st.header("Bauteile")
 
-if st.button("Projekt speichern"):
-    c.execute(
-        "INSERT INTO projects (user_id,customer_id,name,data) VALUES (?,?,?,?)",
-        (user_id, kunde_id, proj_name, "Demo-Daten")
+bauteile = st.multiselect(
+    "Bauteile auswählen",
+    ["Außenwand", "Dach", "Fenster", "Kellerdecke"]
+)
+
+for b in bauteile:
+    st.subheader(b)
+
+    kosten = st.number_input(f"Kosten {b} (€)", 0, 50000, 10000, key=b)
+
+    # Beispielwerte (später durch deine Version 7 Logik ersetzen!)
+    u_alt = 1.0
+    u_neu = 0.2
+    d = 12  # cm
+
+    foerder = kosten * 0.2
+
+    kosten_gesamt += kosten
+    foerder_gesamt += foerder
+
+    st.write(f"U-Wert alt: {u_alt}")
+    st.write(f"U-Wert neu: {u_neu}")
+    st.write(f"Dämmung: {d} cm")
+    st.write(f"Förderung: {int(foerder)} €")
+
+    # 🔥 DATEN SAMMELN (WICHTIG!)
+    bauteile_daten.append({
+        "name": b,
+        "u_alt": u_alt,
+        "u_neu": u_neu,
+        "d": d,
+        "kosten": kosten
+    })
+
+# -------------------------
+# GESAMT
+# -------------------------
+st.header("Gesamt")
+
+st.write(f"💰 Investition: {int(kosten_gesamt)} €")
+st.write(f"💶 Förderung: {int(foerder_gesamt)} €")
+st.write(f"🏦 Eigenanteil: {int(kosten_gesamt - foerder_gesamt)} €")
+
+# -------------------------
+# PDF BUTTON
+# -------------------------
+st.header("Bericht")
+
+if st.button("📄 iSFP Bericht erstellen"):
+
+    create_full_pdf(
+        projektname,
+        baujahr,
+        bauteile_daten,
+        kosten_gesamt,
+        foerder_gesamt
     )
-    conn.commit()
-    st.success("Projekt gespeichert")
 
-# Projekte anzeigen
-c.execute("""
-SELECT projects.name, customers.name
-FROM projects
-JOIN customers ON projects.customer_id = customers.id
-WHERE projects.user_id=?
-""", (user_id,))
-
-for p in c.fetchall():
-    st.write(f"{p[0]} (Kunde: {p[1]})")
+    with open("isfp_profi_bericht.pdf", "rb") as f:
+        st.download_button(
+            "Download Bericht",
+            f,
+            file_name="iSFP_Bericht.pdf"
+        )
