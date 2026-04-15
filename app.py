@@ -1,123 +1,94 @@
 import streamlit as st
+import json
 
-st.set_page_config(page_title="iSFP Tool V4", layout="wide")
+st.set_page_config(page_title="iSFP Tool V5", layout="wide")
 
-st.title("🏠 iSFP Tool – Version 4 (Profi Energieberatung)")
+st.title("🏠 iSFP Tool – Version 5 (Profi)")
+
+# -------------------------
+# PROJEKT SPEICHERN
+# -------------------------
+def save_project(data):
+    with open("projekt.json", "w") as f:
+        json.dump(data, f)
 
 # -------------------------
 # Gebäudedaten
 # -------------------------
 st.header("Gebäude")
 
-baujahr_global = st.number_input("Baujahr Gebäude", 1900, 2025, 1980)
+baujahr = st.number_input("Baujahr", 1900, 2025, 1980)
+wohnflaeche = st.number_input("Wohnfläche (m²)", 50, 500, 120)
 
 # -------------------------
-# U-Wert Tabellen (vereinfacht nach Bekanntmachung)
+# U-Wert Funktion
 # -------------------------
-def u_wert_lookup(baujahr, bauteil, bauart=None):
-    if bauteil == "Außenwand":
-        return 1.3 if baujahr < 1978 else 0.8 if baujahr < 1995 else 0.4
-    
-    if bauteil == "Dach":
-        if bauart == "Steildach":
-            return 1.0 if baujahr < 1978 else 0.6
-        if bauart == "Flachdach":
-            return 0.8 if baujahr < 1978 else 0.5
-    
-    if bauteil == "Fenster":
-        return 2.7 if baujahr < 1995 else 1.5
-    
-    if bauteil == "Kellerdecke":
-        return 1.0 if baujahr < 1978 else 0.8
-    
-    if bauteil == "Bodenplatte":
-        return 0.9
-    
-    if bauteil == "Tür":
-        return 3.0
-
-# Zielwerte BAFA
-zielwerte = {
-    "Außenwand": 0.20,
-    "Dach": 0.14,
-    "Fenster": 0.95,
-    "Kellerdecke": 0.25,
-    "Bodenplatte": 0.30,
-    "Tür": 1.30
-}
-
-# -------------------------
-# IST-ZUSTAND
-# -------------------------
-st.header("🔍 Ist-Zustand")
-
-bauteile = ["Außenwand","Dach","Fenster","Kellerdecke","Bodenplatte","Tür"]
-
-ist_daten = {}
-
-for b in bauteile:
-    st.subheader(b)
-    
-    use_global = st.checkbox(f"Baujahr Gebäude verwenden ({b})", value=True, key=b)
-    
-    if use_global:
-        baujahr = baujahr_global
+def u_wert(baujahr):
+    if baujahr < 1978:
+        return 1.3
+    elif baujahr < 1995:
+        return 0.8
     else:
-        baujahr = st.number_input(f"Baujahr {b}", 1900, 2025, 1980, key=b+"jahr")
-    
-    bauart = None
-    if b == "Dach":
-        bauart = st.selectbox("Dachart", ["Steildach","Flachdach"], key=b+"art")
-    
-    u_alt = u_wert_lookup(baujahr, b, bauart)
-    
-    ist_daten[b] = u_alt
-    
-    st.write(f"👉 U-Wert Ist: {u_alt}")
+        return 0.4
+
+u_alt = u_wert(baujahr)
 
 # -------------------------
-# SANIERUNG
+# Energiebedarf (vereinfacht)
 # -------------------------
-st.header("🧱 Sanierung")
+energie_alt = u_alt * 100  # grobe Näherung
+energie_neu = energie_alt * 0.6
 
-kosten_gesamt = 0
-foerder_gesamt = 0
+einsparung_kwh = energie_alt - energie_neu
 
-for b in bauteile:
-    st.subheader(b)
-    
-    flaeche = st.number_input(f"Fläche {b} (m²)", 0, 500, 100, key=b+"f")
-    
-    lambda_wert = st.number_input(f"Wärmeleitfähigkeit λ {b}", 0.02, 0.08, 0.035, key=b+"l")
-    
-    u_alt = ist_daten[b]
-    u_ziel = zielwerte[b]
-    
-    # Dämmstärke
-    R_alt = 1 / u_alt
-    d = lambda_wert * ((1 / u_ziel) - R_alt)
-    d = max(d, 0)
-    
-    kosten = flaeche * 150
-    foerder = kosten * 0.20
-    
-    kosten_gesamt += kosten
-    foerder_gesamt += foerder
-    
-    st.write(f"Ziel U-Wert: {u_ziel}")
-    st.write(f"👉 Dämmstärke: {round(d*100,1)} cm")
-    st.write(f"💰 Kosten: {int(kosten)} €")
-    
-    if d > 0:
-        st.error("❌ nicht erfüllt")
-    else:
-        st.success("✅ erfüllt")
+# CO2 (0.2 kg/kWh)
+co2 = einsparung_kwh * 0.2
 
 # -------------------------
-# Gesamtbewertung
+# Maßnahmen
 # -------------------------
-st.header("📊 Gesamtbewertung")
+st.header("Sanierung")
 
-st.write(f"💰 Investition: {int(kosten_gesamt)} €")
-st.write(f"💶 Förderung: {int(foerder_gesamt)} €")
-st.write(f"🏦 Eigenanteil: {int(kosten_gesamt - foerder_gesamt)} €")
+kosten = st.number_input("Gesamtkosten (€)", 0, 200000, 50000)
+
+foerder = 0.20
+zuschuss = kosten * foerder
+
+# -------------------------
+# Wirtschaftlichkeit
+# -------------------------
+st.header("📊 Ergebnisse")
+
+st.write(f"Endenergie vorher: {int(energie_alt)} kWh/m²a")
+st.write(f"Endenergie nachher: {int(energie_neu)} kWh/m²a")
+
+st.write(f"Einsparung: {int(einsparung_kwh)} kWh/m²a")
+
+st.write(f"CO₂-Ersparnis: {int(co2)} kg/m²a")
+
+st.write(f"Förderung: {int(zuschuss)} €")
+
+if einsparung_kwh > 0:
+    amortisation = (kosten - zuschuss) / (einsparung_kwh * wohnflaeche * 0.1)
+    st.write(f"Amortisation: {round(amortisation,1)} Jahre")
+
+# -------------------------
+# Projekt speichern
+# -------------------------
+if st.button("💾 Projekt speichern"):
+    save_project({
+        "baujahr": baujahr,
+        "wohnflaeche": wohnflaeche,
+        "kosten": kosten
+    })
+    st.success("Projekt gespeichert!")
+
+# -------------------------
+# Bericht
+# -------------------------
+st.header("📄 Bericht")
+
+st.write("Gebäudeanalyse, Maßnahmen und Empfehlung werden hier dargestellt.")
+
+if st.button("📄 Bericht anzeigen"):
+    st.write("Sanierung empfohlen – große Einsparpotenziale vorhanden.")
