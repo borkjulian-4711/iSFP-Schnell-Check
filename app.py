@@ -1,54 +1,130 @@
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+import streamlit as st
+import sqlite3
+import hashlib
 
-def create_isfp_pdf(projektname, baujahr, bauteil, konstruktion, u_alt, u_ziel, d_opt, kosten, foerder):
+st.set_page_config(page_title="iSFP SaaS", layout="wide")
 
-    doc = SimpleDocTemplate("isfp_bericht.pdf")
-    styles = getSampleStyleSheet()
-    content = []
+# -------------------------
+# DB
+# -------------------------
+conn = sqlite3.connect("saas.db", check_same_thread=False)
+c = conn.cursor()
 
-    # Titel
-    content.append(Paragraph("Individueller Sanierungsfahrplan (iSFP)", styles["Title"]))
-    content.append(Spacer(1,12))
+# Tabellen
+c.execute("""CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    username TEXT,
+    password TEXT
+)""")
 
-    # Gebäude
-    content.append(Paragraph("1. Gebäudeübersicht", styles["Heading2"]))
-    content.append(Paragraph(f"Projekt: {projektname}", styles["Normal"]))
-    content.append(Paragraph(f"Baujahr: {baujahr}", styles["Normal"]))
-    
-    content.append(Spacer(1,12))
+c.execute("""CREATE TABLE IF NOT EXISTS customers (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    email TEXT
+)""")
 
-    # IST
-    content.append(Paragraph("2. Energetischer Ist-Zustand", styles["Heading2"]))
-    content.append(Paragraph(f"Bauteil: {bauteil}", styles["Normal"]))
-    content.append(Paragraph(f"Konstruktion: {konstruktion}", styles["Normal"]))
-    content.append(Paragraph(f"U-Wert Bestand: {u_alt}", styles["Normal"]))
+c.execute("""CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    customer_id INTEGER,
+    name TEXT,
+    data TEXT
+)""")
 
-    content.append(Spacer(1,12))
+conn.commit()
 
-    # Maßnahme
-    content.append(Paragraph("3. Empfohlene Maßnahme", styles["Heading2"]))
-    content.append(Paragraph(f"Ziel U-Wert: {u_ziel}", styles["Normal"]))
-    content.append(Paragraph(f"Erforderliche Dämmstärke: {round(d_opt*100,1)} cm", styles["Normal"]))
+# -------------------------
+# Passwort Hash
+# -------------------------
+def hash_pw(pw):
+    return hashlib.sha256(pw.encode()).hexdigest()
 
-    content.append(Spacer(1,12))
+# -------------------------
+# LOGIN / REGISTER
+# -------------------------
+st.sidebar.title("Login / Registrierung")
 
-    # Fahrplan
-    content.append(Paragraph("4. Sanierungsfahrplan", styles["Heading2"]))
-    content.append(Paragraph("Schritt 1: Gebäudehülle verbessern", styles["Normal"]))
-    content.append(Paragraph("Schritt 2: Anlagentechnik optimieren", styles["Normal"]))
+mode = st.sidebar.selectbox("Modus", ["Login", "Registrieren"])
 
-    content.append(Spacer(1,12))
+username = st.sidebar.text_input("Benutzer")
+password = st.sidebar.text_input("Passwort", type="password")
 
-    # Wirtschaftlichkeit
-    content.append(Paragraph("5. Wirtschaftlichkeit", styles["Heading2"]))
-    content.append(Paragraph(f"Kosten: {int(kosten)} €", styles["Normal"]))
-    content.append(Paragraph(f"Förderung: {int(foerder)} €", styles["Normal"]))
+if mode == "Registrieren":
+    if st.sidebar.button("Account erstellen"):
+        c.execute("INSERT INTO users (username,password) VALUES (?,?)",
+                  (username, hash_pw(password)))
+        conn.commit()
+        st.sidebar.success("Account erstellt")
 
-    content.append(Spacer(1,12))
+if mode == "Login":
+    if st.sidebar.button("Login"):
+        c.execute("SELECT * FROM users WHERE username=? AND password=?",
+                  (username, hash_pw(password)))
+        user = c.fetchone()
+        
+        if user:
+            st.session_state["user_id"] = user[0]
+            st.sidebar.success("Eingeloggt")
+        else:
+            st.sidebar.error("Falsche Daten")
 
-    # Fazit
-    content.append(Paragraph("6. Fazit", styles["Heading2"]))
-    content.append(Paragraph("Die Maßnahme verbessert die Energieeffizienz deutlich und ist förderfähig.", styles["Normal"]))
+# Stop wenn nicht eingeloggt
+if "user_id" not in st.session_state:
+    st.stop()
 
-    doc.build(content)
+# -------------------------
+# DASHBOARD
+# -------------------------
+st.title("📊 Dashboard")
+
+user_id = st.session_state["user_id"]
+
+# -------------------------
+# KUNDEN
+# -------------------------
+st.header("👥 Kunden")
+
+name = st.text_input("Kundenname")
+email = st.text_input("E-Mail")
+
+if st.button("Kunde speichern"):
+    c.execute("INSERT INTO customers (name,email) VALUES (?,?)", (name,email))
+    conn.commit()
+    st.success("Kunde gespeichert")
+
+c.execute("SELECT * FROM customers")
+kunden = c.fetchall()
+
+for k in kunden:
+    st.write(f"{k[1]} – {k[2]}")
+
+# -------------------------
+# PROJEKTE
+# -------------------------
+st.header("🏠 Projekte")
+
+proj_name = st.text_input("Projektname")
+
+kunde_namen = [k[1] for k in kunden]
+kunde = st.selectbox("Kunde auswählen", kunde_namen)
+
+kunde_id = [k[0] for k in kunden if k[1] == kunde][0] if kunden else None
+
+if st.button("Projekt speichern"):
+    c.execute(
+        "INSERT INTO projects (user_id,customer_id,name,data) VALUES (?,?,?,?)",
+        (user_id, kunde_id, proj_name, "Demo-Daten")
+    )
+    conn.commit()
+    st.success("Projekt gespeichert")
+
+# Projekte anzeigen
+c.execute("""
+SELECT projects.name, customers.name
+FROM projects
+JOIN customers ON projects.customer_id = customers.id
+WHERE projects.user_id=?
+""", (user_id,))
+
+for p in c.fetchall():
+    st.write(f"{p[0]} (Kunde: {p[1]})")
