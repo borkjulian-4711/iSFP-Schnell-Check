@@ -1,132 +1,111 @@
 import streamlit as st
-import json
-import os
 
-st.set_page_config(page_title="iSFP Tool V6", layout="wide")
-
-st.title("🏠 iSFP Tool – Version 6 (Profi-Level)")
+st.header("🧱 Bauteile nach Bekanntmachung (Tabelle 2)")
 
 # -------------------------
-# PROJEKTVERWALTUNG
+# Baualtersklassen
 # -------------------------
-DB_FILE = "projekte.json"
-
-def load_projects():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
-    return []
-
-def save_project(data):
-    projects = load_projects()
-    projects.append(data)
-    with open(DB_FILE, "w") as f:
-        json.dump(projects, f)
-
-# -------------------------
-# Gebäudedaten
-# -------------------------
-st.header("Gebäude")
-
-projektname = st.text_input("Projektname")
-
-baujahr = st.number_input("Baujahr", 1900, 2025, 1980)
-wohnflaeche = st.number_input("Wohnfläche (m²)", 50, 500, 120)
-volumen = st.number_input("Gebäudevolumen (m³)", 100, 2000, 400)
-
-luftwechsel = st.slider("Luftwechselrate (1/h)", 0.3, 1.5, 0.7)
-
-# -------------------------
-# Bauteile
-# -------------------------
-st.header("Bauteile")
-
-bauteile = {
-    "Außenwand": {"U_alt": 1.3, "U_ziel": 0.20},
-    "Dach": {"U_alt": 1.0, "U_ziel": 0.14},
-    "Fenster": {"U_alt": 2.7, "U_ziel": 0.95},
-    "Kellerdecke": {"U_alt": 1.0, "U_ziel": 0.25}
+baualter = {
+    "vor 1978": 0,
+    "1979–1995": 1,
+    "1996–2001": 2,
+    "ab 2002": 3
 }
 
-H_alt = 0
-H_neu = 0
+# -------------------------
+# Tabelle 2 (vereinfacht aber strukturiert)
+# -------------------------
+konstruktionen = {
+    "Außenwand": {
+        "Massivbau": [1.4, 0.8, 0.5, 0.35],
+        "Holzbau": [0.9, 0.6, 0.4, 0.28],
+        "Zweischalig": [1.2, 0.7, 0.45, 0.30]
+    },
+    "Dach": {
+        "Steildach ungedämmt": [1.0, 0.8, 0.6, 0.4],
+        "Steildach gedämmt": [0.6, 0.4, 0.3, 0.2],
+        "Flachdach": [0.8, 0.6, 0.4, 0.25]
+    },
+    "Kellerdecke": {
+        "Massiv": [1.0, 0.8, 0.6, 0.4]
+    },
+    "Bodenplatte": {
+        "gegen Erdreich": [0.9, 0.7, 0.5, 0.35]
+    },
+    "Fenster": {
+        "2-fach": [2.7, 1.9, 1.5, 1.3],
+        "3-fach": [1.5, 1.3, 1.1, 0.9]
+    },
+    "Tür": {
+        "Standard": [3.0, 2.5, 2.0, 1.5]
+    }
+}
 
-for b in bauteile:
-    st.subheader(b)
-    
-    flaeche = st.number_input(f"Fläche {b}", 0, 500, 100, key=b)
-    
-    U_alt = bauteile[b]["U_alt"]
-    U_ziel = bauteile[b]["U_ziel"]
-    
-    H_alt += U_alt * flaeche
-    H_neu += U_ziel * flaeche
-    
-    st.write(f"U-Wert alt: {U_alt}")
-    st.write(f"U-Wert neu: {U_ziel}")
+# Zielwerte
+zielwerte = {
+    "Außenwand": 0.20,
+    "Dach": 0.14,
+    "Kellerdecke": 0.25,
+    "Bodenplatte": 0.30,
+    "Fenster": 0.95,
+    "Tür": 1.30
+}
+
+# WLG
+wlg_dict = {
+    "032": 0.032,
+    "035": 0.035,
+    "040": 0.040
+}
 
 # -------------------------
-# Energie (vereinfacht)
+# Auswahl
 # -------------------------
-st.header("Energie")
+bauteil = st.selectbox("Bauteil", list(konstruktionen.keys()))
 
-# Transmission
-Q_trans_alt = H_alt * 0.024
-Q_trans_neu = H_neu * 0.024
+konstruktion = st.selectbox(
+    "Konstruktion",
+    list(konstruktionen[bauteil].keys())
+)
 
-# Lüftung
-Q_luft = 0.34 * luftwechsel * volumen * 0.024
+baujahr_klasse = st.selectbox(
+    "Baualtersklasse",
+    list(baualter.keys())
+)
 
-energie_alt = (Q_trans_alt + Q_luft) / wohnflaeche * 1000
-energie_neu = (Q_trans_neu + Q_luft) / wohnflaeche * 1000
+index = baualter[baujahr_klasse]
 
-einsparung = energie_alt - energie_neu
+u_alt = konstruktionen[bauteil][konstruktion][index]
+u_ziel = zielwerte[bauteil]
 
-# CO2
-co2 = einsparung * 0.2
-
-# -------------------------
-# Kosten & Förderung
-# -------------------------
-st.header("Kosten & Förderung")
-
-kosten = st.number_input("Gesamtkosten (€)", 0, 200000, 50000)
-foerder = kosten * 0.20
+st.write(f"👉 U-Wert Ist: {u_alt}")
+st.write(f"👉 Ziel U-Wert: {u_ziel}")
 
 # -------------------------
-# Ergebnisse
+# Dämmung
 # -------------------------
-st.header("📊 Ergebnisse")
+st.subheader("Dämmung")
 
-st.write(f"Endenergie vorher: {int(energie_alt)} kWh/m²a")
-st.write(f"Endenergie nachher: {int(energie_neu)} kWh/m²a")
-st.write(f"Einsparung: {int(einsparung)} kWh/m²a")
+wlg = st.selectbox("Wärmeleitgruppe", list(wlg_dict.keys()))
+lambda_wert = wlg_dict[wlg]
 
-st.write(f"CO₂-Ersparnis: {int(co2)} kg/m²a")
+# optimale Dämmstärke berechnen
+R_alt = 1 / u_alt
+d_opt = lambda_wert * ((1 / u_ziel) - R_alt)
+d_opt = max(d_opt, 0)
 
-st.write(f"Förderung: {int(foerder)} €")
+st.write(f"👉 erforderliche Dämmstärke: {round(d_opt*100,1)} cm")
 
-if einsparung > 0:
-    amortisation = (kosten - foerder) / (einsparung * wohnflaeche * 0.1)
-    st.write(f"Amortisation: {round(amortisation,1)} Jahre")
+# manuelle Anpassung
+d_cm = st.slider("Dämmstärke anpassen (cm)", 0, 30, int(d_opt*100))
+d = d_cm / 100
 
-# -------------------------
-# Projekt speichern
-# -------------------------
-if st.button("💾 Projekt speichern"):
-    save_project({
-        "name": projektname,
-        "baujahr": baujahr,
-        "energie_alt": energie_alt,
-        "energie_neu": energie_neu
-    })
-    st.success("Projekt gespeichert!")
+U_neu = 1 / (R_alt + d / lambda_wert)
 
-# -------------------------
-# Projekte anzeigen
-# -------------------------
-st.header("📁 Gespeicherte Projekte")
+st.write(f"👉 neuer U-Wert: {round(U_neu,3)}")
 
-projects = load_projects()
-for p in projects:
-    st.write(p)
+# Bewertung
+if U_neu <= u_ziel:
+    st.success("✅ Anforderung erfüllt")
+else:
+    st.error("❌ Anforderung nicht erfüllt")
