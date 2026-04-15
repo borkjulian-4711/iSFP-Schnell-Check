@@ -8,12 +8,8 @@ import matplotlib.pyplot as plt
 # -------------------------
 def create_full_pdf(projektname, baujahr, bauteile_daten, kosten_gesamt, foerder_gesamt):
 
-    # Diagramm erzeugen
-    energie_alt = 200
-    energie_neu = 120
-
     plt.figure()
-    plt.bar(["Vorher","Nachher"], [energie_alt, energie_neu])
+    plt.bar(["Vorher","Nachher"], [200,120])
     plt.savefig("energie.png")
     plt.close()
 
@@ -47,23 +43,51 @@ def create_full_pdf(projektname, baujahr, bauteile_daten, kosten_gesamt, foerder
     doc.build(content)
 
 # -------------------------
-# APP START
+# DATEN
 # -------------------------
-st.set_page_config(page_title="iSFP Tool", layout="wide")
+baualter = {
+    "vor 1978": 0,
+    "1979–1995": 1,
+    "1996–2001": 2,
+    "ab 2002": 3
+}
 
-st.title("🏠 iSFP Beratungs-Tool (Profi)")
+konstruktionen = {
+    "Außenwand": {
+        "Massivbau": [1.4, 0.8, 0.5, 0.35],
+        "Holzbau": [0.9, 0.6, 0.4, 0.28]
+    },
+    "Dach": {
+        "Steildach": [1.0, 0.6, 0.3, 0.2],
+        "Flachdach": [0.8, 0.5, 0.3, 0.2]
+    },
+    "Fenster": {
+        "2-fach": [2.7, 1.9, 1.5, 1.3],
+        "3-fach": [1.5, 1.3, 1.1, 0.9]
+    }
+}
+
+zielwerte = {
+    "Außenwand": 0.20,
+    "Dach": 0.14,
+    "Fenster": 0.95
+}
+
+wlg_dict = {
+    "032": 0.032,
+    "035": 0.035,
+    "040": 0.040
+}
 
 # -------------------------
-# PROJEKT
+# APP
 # -------------------------
-st.header("Projekt")
+st.set_page_config(page_title="iSFP Tool 9.1", layout="wide")
+st.title("🏠 iSFP Tool – Version 9.1 (Profi)")
 
 projektname = st.text_input("Projektname", "Musterprojekt")
 baujahr = st.number_input("Baujahr", 1900, 2025, 1980)
 
-# -------------------------
-# DATEN INITIALISIEREN
-# -------------------------
 bauteile_daten = []
 kosten_gesamt = 0
 foerder_gesamt = 0
@@ -73,56 +97,60 @@ foerder_gesamt = 0
 # -------------------------
 st.header("Bauteile")
 
-bauteile = st.multiselect(
-    "Bauteile auswählen",
-    ["Außenwand", "Dach", "Fenster", "Kellerdecke"]
-)
+bauteil = st.selectbox("Bauteil", list(konstruktionen.keys()))
+konstruktion = st.selectbox("Konstruktion", list(konstruktionen[bauteil].keys()))
+baujahr_klasse = st.selectbox("Baualtersklasse", list(baualter.keys()))
 
-for b in bauteile:
-    st.subheader(b)
+index = baualter[baujahr_klasse]
+u_alt = konstruktionen[bauteil][konstruktion][index]
+u_ziel = zielwerte[bauteil]
 
-    kosten = st.number_input(f"Kosten {b} (€)", 0, 50000, 10000, key=b)
+st.write(f"U-Wert Bestand: {u_alt}")
+st.write(f"Ziel U-Wert: {u_ziel}")
 
-    # Beispielwerte (später durch deine Version 7 Logik ersetzen!)
-    u_alt = 1.0
-    u_neu = 0.2
-    d = 12  # cm
+# Dämmung
+wlg = st.selectbox("Wärmeleitgruppe", list(wlg_dict.keys()))
+lambda_wert = wlg_dict[wlg]
 
-    foerder = kosten * 0.2
+R_alt = 1 / u_alt
+d_opt = lambda_wert * ((1 / u_ziel) - R_alt)
+d_opt = max(d_opt, 0)
 
-    kosten_gesamt += kosten
-    foerder_gesamt += foerder
+d_cm = st.slider("Dämmstärke (cm)", 0, 30, int(d_opt*100))
+d = d_cm / 100
 
-    st.write(f"U-Wert alt: {u_alt}")
-    st.write(f"U-Wert neu: {u_neu}")
-    st.write(f"Dämmung: {d} cm")
-    st.write(f"Förderung: {int(foerder)} €")
+U_neu = 1 / (R_alt + d / lambda_wert)
 
-    # 🔥 DATEN SAMMELN (WICHTIG!)
+st.write(f"Neuer U-Wert: {round(U_neu,3)}")
+
+# Kosten
+kosten = st.number_input("Kosten (€)", 0, 100000, 20000)
+foerder = kosten * 0.20
+
+kosten_gesamt += kosten
+foerder_gesamt += foerder
+
+if st.button("➕ Bauteil hinzufügen"):
     bauteile_daten.append({
-        "name": b,
-        "u_alt": u_alt,
-        "u_neu": u_neu,
-        "d": d,
+        "name": bauteil,
+        "u_alt": round(u_alt,2),
+        "u_neu": round(U_neu,2),
+        "d": d_cm,
         "kosten": kosten
     })
+    st.success("Bauteil hinzugefügt")
 
-# -------------------------
-# GESAMT
-# -------------------------
+# Anzeige
 st.header("Gesamt")
+
+for b in bauteile_daten:
+    st.write(b)
 
 st.write(f"💰 Investition: {int(kosten_gesamt)} €")
 st.write(f"💶 Förderung: {int(foerder_gesamt)} €")
-st.write(f"🏦 Eigenanteil: {int(kosten_gesamt - foerder_gesamt)} €")
 
-# -------------------------
-# PDF BUTTON
-# -------------------------
-st.header("Bericht")
-
-if st.button("📄 iSFP Bericht erstellen"):
-
+# PDF
+if st.button("📄 Bericht erstellen"):
     create_full_pdf(
         projektname,
         baujahr,
@@ -132,8 +160,4 @@ if st.button("📄 iSFP Bericht erstellen"):
     )
 
     with open("isfp_profi_bericht.pdf", "rb") as f:
-        st.download_button(
-            "Download Bericht",
-            f,
-            file_name="iSFP_Bericht.pdf"
-        )
+        st.download_button("Download Bericht", f)
