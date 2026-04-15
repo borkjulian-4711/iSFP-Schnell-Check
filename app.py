@@ -29,7 +29,10 @@ def create_full_pdf(projektname, baujahr, bauteile_daten, kosten_gesamt, foerder
 
     for b in bauteile_daten:
         content.append(Paragraph(
-            f"{b['name']}: U alt {b['u_alt']} → U neu {b['u_neu']} | Dämmung {b['d']} cm",
+            f"{b['name']} ({b['konstruktion']}): "
+            f"{b['material']} WLG {b['wlg']} | "
+            f"U alt {b['u_alt']} → U neu {b['u_neu']} | "
+            f"Dämmung {b['d']} cm",
             styles["Normal"]
         ))
 
@@ -38,7 +41,6 @@ def create_full_pdf(projektname, baujahr, bauteile_daten, kosten_gesamt, foerder
     content.append(Paragraph("Kosten & Förderung:", styles["Heading2"]))
     content.append(Paragraph(f"Gesamtkosten: {int(kosten_gesamt)} €", styles["Normal"]))
     content.append(Paragraph(f"Förderung: {int(foerder_gesamt)} €", styles["Normal"]))
-    content.append(Paragraph(f"Eigenanteil: {int(kosten_gesamt - foerder_gesamt)} €", styles["Normal"]))
 
     doc.build(content)
 
@@ -73,17 +75,20 @@ zielwerte = {
     "Fenster": 0.95
 }
 
-wlg_dict = {
-    "032": 0.032,
-    "035": 0.035,
-    "040": 0.040
+# Materialien + WLG
+materialien = {
+    "Mineralwolle": [0.035, 0.040],
+    "EPS": [0.032, 0.035, 0.040],
+    "XPS": [0.032, 0.035],
+    "PUR/PIR": [0.024, 0.028],
+    "Holzweichfaser": [0.040, 0.045]
 }
 
 # -------------------------
 # APP
 # -------------------------
-st.set_page_config(page_title="iSFP Tool 9.1", layout="wide")
-st.title("🏠 iSFP Tool – Version 9.1 (Profi)")
+st.set_page_config(page_title="iSFP Tool 9.2", layout="wide")
+st.title("🏠 iSFP Tool – Version 9.2 (Materialvergleich)")
 
 projektname = st.text_input("Projektname", "Musterprojekt")
 baujahr = st.number_input("Baujahr", 1900, 2025, 1980)
@@ -93,9 +98,9 @@ kosten_gesamt = 0
 foerder_gesamt = 0
 
 # -------------------------
-# BAUTEILE
+# BAUTEIL AUSWAHL
 # -------------------------
-st.header("Bauteile")
+st.header("Bauteil")
 
 bauteil = st.selectbox("Bauteil", list(konstruktionen.keys()))
 konstruktion = st.selectbox("Konstruktion", list(konstruktionen[bauteil].keys()))
@@ -108,31 +113,67 @@ u_ziel = zielwerte[bauteil]
 st.write(f"U-Wert Bestand: {u_alt}")
 st.write(f"Ziel U-Wert: {u_ziel}")
 
-# Dämmung
-wlg = st.selectbox("Wärmeleitgruppe", list(wlg_dict.keys()))
-lambda_wert = wlg_dict[wlg]
+# -------------------------
+# MATERIALVERGLEICH
+# -------------------------
+st.header("Materialvergleich")
 
-R_alt = 1 / u_alt
-d_opt = lambda_wert * ((1 / u_ziel) - R_alt)
-d_opt = max(d_opt, 0)
+vergleich = []
 
-d_cm = st.slider("Dämmstärke (cm)", 0, 30, int(d_opt*100))
+for mat, wlg_list in materialien.items():
+    for lam in wlg_list:
+
+        R_alt = 1 / u_alt
+        d = lam * ((1 / u_ziel) - R_alt)
+        d = max(d, 0)
+
+        vergleich.append({
+            "Material": mat,
+            "λ": lam,
+            "Dämmstärke (cm)": round(d * 100,1)
+        })
+
+st.write("### Vergleich optimale Dämmstärke")
+st.dataframe(vergleich)
+
+# -------------------------
+# AUSWAHL EINER VARIANTE
+# -------------------------
+st.header("Auswahl")
+
+material = st.selectbox("Material wählen", list(materialien.keys()))
+lambda_wert = st.selectbox("λ wählen", materialien[material])
+
+d_cm = st.slider("Dämmstärke (cm)", 0, 30, 12)
 d = d_cm / 100
 
-U_neu = 1 / (R_alt + d / lambda_wert)
+U_neu = 1 / ((1/u_alt) + d / lambda_wert)
 
 st.write(f"Neuer U-Wert: {round(U_neu,3)}")
 
-# Kosten
+if U_neu <= u_ziel:
+    st.success("✅ erfüllt")
+else:
+    st.error("❌ nicht erfüllt")
+
+# -------------------------
+# KOSTEN
+# -------------------------
 kosten = st.number_input("Kosten (€)", 0, 100000, 20000)
 foerder = kosten * 0.20
 
 kosten_gesamt += kosten
 foerder_gesamt += foerder
 
+# -------------------------
+# BAUTEIL SPEICHERN
+# -------------------------
 if st.button("➕ Bauteil hinzufügen"):
     bauteile_daten.append({
         "name": bauteil,
+        "konstruktion": konstruktion,
+        "material": material,
+        "wlg": lambda_wert,
         "u_alt": round(u_alt,2),
         "u_neu": round(U_neu,2),
         "d": d_cm,
@@ -140,16 +181,19 @@ if st.button("➕ Bauteil hinzufügen"):
     })
     st.success("Bauteil hinzugefügt")
 
-# Anzeige
-st.header("Gesamt")
+# -------------------------
+# ÜBERSICHT
+# -------------------------
+st.header("Übersicht")
 
-for b in bauteile_daten:
-    st.write(b)
+st.write(bauteile_daten)
 
 st.write(f"💰 Investition: {int(kosten_gesamt)} €")
 st.write(f"💶 Förderung: {int(foerder_gesamt)} €")
 
+# -------------------------
 # PDF
+# -------------------------
 if st.button("📄 Bericht erstellen"):
     create_full_pdf(
         projektname,
