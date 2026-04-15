@@ -1,111 +1,54 @@
-import streamlit as st
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
-st.header("🧱 Bauteile nach Bekanntmachung (Tabelle 2)")
+def create_isfp_pdf(projektname, baujahr, bauteil, konstruktion, u_alt, u_ziel, d_opt, kosten, foerder):
 
-# -------------------------
-# Baualtersklassen
-# -------------------------
-baualter = {
-    "vor 1978": 0,
-    "1979–1995": 1,
-    "1996–2001": 2,
-    "ab 2002": 3
-}
+    doc = SimpleDocTemplate("isfp_bericht.pdf")
+    styles = getSampleStyleSheet()
+    content = []
 
-# -------------------------
-# Tabelle 2 (vereinfacht aber strukturiert)
-# -------------------------
-konstruktionen = {
-    "Außenwand": {
-        "Massivbau": [1.4, 0.8, 0.5, 0.35],
-        "Holzbau": [0.9, 0.6, 0.4, 0.28],
-        "Zweischalig": [1.2, 0.7, 0.45, 0.30]
-    },
-    "Dach": {
-        "Steildach ungedämmt": [1.0, 0.8, 0.6, 0.4],
-        "Steildach gedämmt": [0.6, 0.4, 0.3, 0.2],
-        "Flachdach": [0.8, 0.6, 0.4, 0.25]
-    },
-    "Kellerdecke": {
-        "Massiv": [1.0, 0.8, 0.6, 0.4]
-    },
-    "Bodenplatte": {
-        "gegen Erdreich": [0.9, 0.7, 0.5, 0.35]
-    },
-    "Fenster": {
-        "2-fach": [2.7, 1.9, 1.5, 1.3],
-        "3-fach": [1.5, 1.3, 1.1, 0.9]
-    },
-    "Tür": {
-        "Standard": [3.0, 2.5, 2.0, 1.5]
-    }
-}
+    # Titel
+    content.append(Paragraph("Individueller Sanierungsfahrplan (iSFP)", styles["Title"]))
+    content.append(Spacer(1,12))
 
-# Zielwerte
-zielwerte = {
-    "Außenwand": 0.20,
-    "Dach": 0.14,
-    "Kellerdecke": 0.25,
-    "Bodenplatte": 0.30,
-    "Fenster": 0.95,
-    "Tür": 1.30
-}
+    # Gebäude
+    content.append(Paragraph("1. Gebäudeübersicht", styles["Heading2"]))
+    content.append(Paragraph(f"Projekt: {projektname}", styles["Normal"]))
+    content.append(Paragraph(f"Baujahr: {baujahr}", styles["Normal"]))
+    
+    content.append(Spacer(1,12))
 
-# WLG
-wlg_dict = {
-    "032": 0.032,
-    "035": 0.035,
-    "040": 0.040
-}
+    # IST
+    content.append(Paragraph("2. Energetischer Ist-Zustand", styles["Heading2"]))
+    content.append(Paragraph(f"Bauteil: {bauteil}", styles["Normal"]))
+    content.append(Paragraph(f"Konstruktion: {konstruktion}", styles["Normal"]))
+    content.append(Paragraph(f"U-Wert Bestand: {u_alt}", styles["Normal"]))
 
-# -------------------------
-# Auswahl
-# -------------------------
-bauteil = st.selectbox("Bauteil", list(konstruktionen.keys()))
+    content.append(Spacer(1,12))
 
-konstruktion = st.selectbox(
-    "Konstruktion",
-    list(konstruktionen[bauteil].keys())
-)
+    # Maßnahme
+    content.append(Paragraph("3. Empfohlene Maßnahme", styles["Heading2"]))
+    content.append(Paragraph(f"Ziel U-Wert: {u_ziel}", styles["Normal"]))
+    content.append(Paragraph(f"Erforderliche Dämmstärke: {round(d_opt*100,1)} cm", styles["Normal"]))
 
-baujahr_klasse = st.selectbox(
-    "Baualtersklasse",
-    list(baualter.keys())
-)
+    content.append(Spacer(1,12))
 
-index = baualter[baujahr_klasse]
+    # Fahrplan
+    content.append(Paragraph("4. Sanierungsfahrplan", styles["Heading2"]))
+    content.append(Paragraph("Schritt 1: Gebäudehülle verbessern", styles["Normal"]))
+    content.append(Paragraph("Schritt 2: Anlagentechnik optimieren", styles["Normal"]))
 
-u_alt = konstruktionen[bauteil][konstruktion][index]
-u_ziel = zielwerte[bauteil]
+    content.append(Spacer(1,12))
 
-st.write(f"👉 U-Wert Ist: {u_alt}")
-st.write(f"👉 Ziel U-Wert: {u_ziel}")
+    # Wirtschaftlichkeit
+    content.append(Paragraph("5. Wirtschaftlichkeit", styles["Heading2"]))
+    content.append(Paragraph(f"Kosten: {int(kosten)} €", styles["Normal"]))
+    content.append(Paragraph(f"Förderung: {int(foerder)} €", styles["Normal"]))
 
-# -------------------------
-# Dämmung
-# -------------------------
-st.subheader("Dämmung")
+    content.append(Spacer(1,12))
 
-wlg = st.selectbox("Wärmeleitgruppe", list(wlg_dict.keys()))
-lambda_wert = wlg_dict[wlg]
+    # Fazit
+    content.append(Paragraph("6. Fazit", styles["Heading2"]))
+    content.append(Paragraph("Die Maßnahme verbessert die Energieeffizienz deutlich und ist förderfähig.", styles["Normal"]))
 
-# optimale Dämmstärke berechnen
-R_alt = 1 / u_alt
-d_opt = lambda_wert * ((1 / u_ziel) - R_alt)
-d_opt = max(d_opt, 0)
-
-st.write(f"👉 erforderliche Dämmstärke: {round(d_opt*100,1)} cm")
-
-# manuelle Anpassung
-d_cm = st.slider("Dämmstärke anpassen (cm)", 0, 30, int(d_opt*100))
-d = d_cm / 100
-
-U_neu = 1 / (R_alt + d / lambda_wert)
-
-st.write(f"👉 neuer U-Wert: {round(U_neu,3)}")
-
-# Bewertung
-if U_neu <= u_ziel:
-    st.success("✅ Anforderung erfüllt")
-else:
-    st.error("❌ Anforderung nicht erfüllt")
+    doc.build(content)
